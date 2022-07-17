@@ -24,6 +24,7 @@ type Proxy struct {
 	k8sc          *k8s.Api
 	requestID     int
 	requestIDLock sync.Mutex
+	parser        *Parser
 }
 
 func (p *Proxy) nextRequestID() int {
@@ -35,7 +36,9 @@ func (p *Proxy) nextRequestID() int {
 }
 
 func NewProxy(k8sc *k8s.Api) *Proxy {
-	return &Proxy{k8sc: k8sc, requestID: 0}
+	return &Proxy{k8sc: k8sc, requestID: 0, parser: &Parser{
+		ClusterDomain: "cluster.local",
+	}}
 }
 
 func (p *Proxy) handleRequest(req *http.Request, tp *k8s.TargetPod, streamConn httpstream.Connection) (*http.Request, *http.Response, error) {
@@ -45,11 +48,11 @@ func (p *Proxy) handleRequest(req *http.Request, tp *k8s.TargetPod, streamConn h
 	// create error stream
 	headers := http.Header{}
 	headers.Set(v1.StreamType, v1.StreamTypeError)
-	headers.Set(v1.PortHeader, fmt.Sprintf("%d", tp.Port))
+	headers.Set(v1.PortHeader, tp.Port)
 	headers.Set(v1.PortForwardRequestIDHeader, strconv.Itoa(requestID))
 	errorStream, err := streamConn.CreateStream(headers)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error creating error stream for pod %s -> %d: %v", tp.Name, tp.Port, err)
+		return nil, nil, fmt.Errorf("error creating error stream for pod %s -> %s: %v", tp.Name, tp.Port, err)
 	}
 	// we're not writing to this stream
 	errorStream.Close()
@@ -59,9 +62,9 @@ func (p *Proxy) handleRequest(req *http.Request, tp *k8s.TargetPod, streamConn h
 		message, err := ioutil.ReadAll(errorStream)
 		switch {
 		case err != nil:
-			errorChan <- fmt.Errorf("error reading from error stream for pod %s -> %d: %v", tp.Name, tp.Port, err)
+			errorChan <- fmt.Errorf("error reading from error stream for pod %s -> %s: %v", tp.Name, tp.Port, err)
 		case len(message) > 0:
-			errorChan <- fmt.Errorf("an error occurred forwarding on pod %s -> %d: %v", tp.Name, tp.Port, string(message))
+			errorChan <- fmt.Errorf("an error occurred forwarding on pod %s -> %s: %v", tp.Name, tp.Port, string(message))
 		}
 		close(errorChan)
 	}()
@@ -70,7 +73,7 @@ func (p *Proxy) handleRequest(req *http.Request, tp *k8s.TargetPod, streamConn h
 	headers.Set(v1.StreamType, v1.StreamTypeData)
 	dataStream, err := streamConn.CreateStream(headers)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error creating forwarding stream for pod %s -> %d: %v", tp.Name, tp.Port, err)
+		return nil, nil, fmt.Errorf("error creating forwarding stream for pod %s -> %s: %v", tp.Name, tp.Port, err)
 	}
 
 	localError := make(chan struct{})
@@ -132,11 +135,11 @@ func (p *Proxy) handleConnection(conn net.Conn, tp *k8s.TargetPod, streamConn ht
 	// create error stream
 	headers := http.Header{}
 	headers.Set(v1.StreamType, v1.StreamTypeError)
-	headers.Set(v1.PortHeader, fmt.Sprintf("%d", tp.Port))
+	headers.Set(v1.PortHeader, tp.Port)
 	headers.Set(v1.PortForwardRequestIDHeader, strconv.Itoa(requestID))
 	errorStream, err := streamConn.CreateStream(headers)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error creating error stream for pod %s -> %d: %v", tp.Name, tp.Port, err))
+		runtime.HandleError(fmt.Errorf("error creating error stream for pod %s -> %s: %v", tp.Name, tp.Port, err))
 		return
 	}
 	// we're not writing to this stream
@@ -147,9 +150,9 @@ func (p *Proxy) handleConnection(conn net.Conn, tp *k8s.TargetPod, streamConn ht
 		message, err := ioutil.ReadAll(errorStream)
 		switch {
 		case err != nil:
-			errorChan <- fmt.Errorf("error reading from error stream for pod %s -> %d: %v", tp.Name, tp.Port, err)
+			errorChan <- fmt.Errorf("error reading from error stream for pod %s -> %s: %v", tp.Name, tp.Port, err)
 		case len(message) > 0:
-			errorChan <- fmt.Errorf("an error occurred forwarding on pod %s -> %d: %v", tp.Name, tp.Port, string(message))
+			errorChan <- fmt.Errorf("an error occurred forwarding on pod %s -> %s: %v", tp.Name, tp.Port, string(message))
 		}
 		close(errorChan)
 	}()
@@ -158,7 +161,7 @@ func (p *Proxy) handleConnection(conn net.Conn, tp *k8s.TargetPod, streamConn ht
 	headers.Set(v1.StreamType, v1.StreamTypeData)
 	dataStream, err := streamConn.CreateStream(headers)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error creating forwarding stream for pod %s -> %d: %v", tp.Name, tp.Port, err))
+		runtime.HandleError(fmt.Errorf("error creating forwarding stream for pod %s -> %s: %v", tp.Name, tp.Port, err))
 		return
 	}
 
@@ -201,9 +204,19 @@ func (p *Proxy) handleConnection(conn net.Conn, tp *k8s.TargetPod, streamConn ht
 	}
 }
 
-func (p *Proxy) Do(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (p *Proxy) getTargetPod(r *http.Request) (*k8s.TargetPod, error) {
+	h, err := p.parser.ParseHost(r.Host, r.URL.Scheme == "https")
+	if err != nil {
+		return nil, fmt.Errorf("could not parse host %w", err)
+	}
+	if h.Type == "pod" {
+		return p.k8sc.GetMatchingPod(r.Context(), h.Namespace, h.Name, h.Port)
+	}
+	return p.k8sc.GetMatchingPodForService(r.Context(), h.Namespace, h.Name, h.Port)
+}
 
-	tp, err := p.k8sc.GetMatchingPodForService(r.Context(), "home-notifier", "hnn-service", "8080")
+func (p *Proxy) Do(r *http.Request, _ *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	tp, err := p.getTargetPod(r)
 	if err != nil {
 		log.Printf("[INFO] could not get pod %v", err)
 		return r, nil
@@ -229,8 +242,8 @@ func (p *Proxy) Do(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http
 	return r, resp
 }
 
-func (p *Proxy) HijackConnect(req *http.Request, client net.Conn, ctx *goproxy.ProxyCtx) {
-	tp, err := p.k8sc.GetMatchingPodForService(req.Context(), "home-notifier", "hnn-service", "8080")
+func (p *Proxy) HijackConnect(r *http.Request, client net.Conn, _ *goproxy.ProxyCtx) {
+	tp, err := p.getTargetPod(r)
 	if err != nil {
 		log.Printf("[INFO] could not get pod %v", err)
 		client.Write([]byte("HTTP/1.1 500 Cannot reach destination\r\n\r\n"))

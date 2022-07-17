@@ -53,10 +53,24 @@ func (api *Api) GetMatchingPod(ctx context.Context, namespace, podName, port str
 	if err != nil {
 		return nil, fmt.Errorf("could not find pods: %w", err)
 	}
+
+	var podPort string
+	for _, c := range pod.Spec.Containers {
+		if podPort != "" {
+			break
+		}
+		for _, p := range c.Ports {
+			pp := strconv.Itoa(int(p.ContainerPort))
+			if pp == port || p.Name == port {
+				podPort = pp
+				break
+			}
+		}
+	}
 	return &TargetPod{
 		Namespace: pod.Namespace,
 		Name:      pod.Name,
-		Port:      port,
+		Port:      podPort,
 	}, nil
 }
 
