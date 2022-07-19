@@ -21,6 +21,39 @@ build: ## Build your project and put the output binary in out/bin/
 	mkdir -p out/bin
 	$(GOCMD) build -o out/bin/$(BINARY_NAME) .
 
+build-all: \
+	build-linux-arm64 \
+	build-linux-amd64 \
+	build-darwin-arm64 \
+	build-darwin-amd64 \
+	build-windows-amd64 \
+	build-windows-arm64 ## Build your project for all OS' and ARCH and put the output binary in out/bin/
+
+
+build-linux-arm64: ## Build your project for linux arm64 and put the output binary in out/bin/
+	mkdir -p out/bin
+	GOOS=linux GOARCH=arm64 $(GOCMD) build -o out/bin/$(BINARY_NAME)-linux-arm64 .
+
+build-linux-amd64: ## Build your project for linux amd64 and put the output binary in out/bin/
+	mkdir -p out/bin
+	GOOS=linux GOARCH=arm64 $(GOCMD) build -o out/bin/$(BINARY_NAME)-linux-amd64 .
+
+build-darwin-arm64: ## Build your project for darwin arm64 and put the output binary in out/bin/
+	mkdir -p out/bin
+	GOOS=darwin GOARCH=arm64 $(GOCMD) build -o out/bin/$(BINARY_NAME)-darwin-arm64 .
+
+build-darwin-amd64: ## Build your project for darwin amd64 and put the output binary in out/bin/
+	mkdir -p out/bin
+	GOOS=darwin GOARCH=amd64 $(GOCMD) build -o out/bin/$(BINARY_NAME)-darwin-amd64 .
+
+build-windows-amd64: ## Build your project for windows amd64 and put the output binary in out/bin/
+	mkdir -p out/bin
+	GOOS=windows GOARCH=amd64 $(GOCMD) build -o out/bin/$(BINARY_NAME)-windows-amd64 .
+
+build-windows-arm64: ## Build your project for windows arm64 and put the output binary in out/bin/
+	mkdir -p out/bin
+	GOOS=windows GOARCH=arm64 $(GOCMD) build -o out/bin/$(BINARY_NAME)-windows-arm64 .
+
 clean: ## Remove build related file
 	rm -fr ./bin
 	rm -fr ./out

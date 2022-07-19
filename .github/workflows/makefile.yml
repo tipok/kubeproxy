@@ -3,6 +3,7 @@ name: Makefile CI
 on:
   push:
     branches: [ "main" ]
+    tags: [ 'v*.*.*' ]
   pull_request:
     branches: [ "main" ]
 
@@ -18,4 +19,12 @@ jobs:
       run: make check
       
     - name: Run build
-      run: make build
+      run: make build-all
+      if: github.event_name != 'pull_request'
+
+    - name: Upload assets
+      uses: AButler/upload-release-assets@v2.0
+      if: github.event_name != 'pull_request'
+      with:
+        files: 'artifacts/*;packages/*.nupkg'
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
