@@ -26,6 +26,8 @@ clean: ## Remove build related file
 	rm -fr ./out
 	rm -f ./junit-report.xml checkstyle-report.xml ./coverage.xml ./profile.cov yamllint-checkstyle.xml
 
+check: lint test ## Run all checks of the project running lint and tests
+
 ## Test:
 test: ## Run the tests of the project
 ifeq ($(EXPORT_RESULT), true)
