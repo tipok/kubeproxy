@@ -55,7 +55,10 @@ func (p *Proxy) handleRequest(req *http.Request, tp *k8s.TargetPod, streamConn h
 		return nil, nil, fmt.Errorf("error creating error stream for pod %s -> %s: %v", tp.Name, tp.Port, err)
 	}
 	// we're not writing to this stream
-	errorStream.Close()
+	err = errorStream.Close()
+	if err != nil {
+		log.Printf("[DEBUG] error closing error stream for pod %s -> %s: %v", tp.Name, tp.Port, err)
+	}
 
 	errorChan := make(chan error)
 	go func() {
@@ -93,7 +96,12 @@ func (p *Proxy) handleRequest(req *http.Request, tp *k8s.TargetPod, streamConn h
 
 	go func() {
 		// inform server we're not sending any more data after copy unblocks
-		defer dataStream.Close()
+		defer func() {
+			err := dataStream.Close()
+			if err != nil {
+				log.Printf("[DEBUG] error closing data stream: %v", err)
+			}
+		}()
 
 		// Copy from the local port to the remote side.
 		reqBytes, err := httputil.DumpRequestOut(req, false)
@@ -120,7 +128,10 @@ func (p *Proxy) handleRequest(req *http.Request, tp *k8s.TargetPod, streamConn h
 	err = <-errorChan
 	if err != nil {
 		runtime.HandleError(err)
-		streamConn.Close()
+		err := streamConn.Close()
+		if err != nil {
+			log.Printf("[DEBUG] error closing stream connection: %v", err)
+		}
 		return nil, nil, err
 	}
 
@@ -128,7 +139,12 @@ func (p *Proxy) handleRequest(req *http.Request, tp *k8s.TargetPod, streamConn h
 }
 
 func (p *Proxy) handleConnection(conn net.Conn, tp *k8s.TargetPod, streamConn httpstream.Connection) {
-	defer conn.Close()
+	defer func() {
+		err := conn.Close()
+		if err != nil {
+			log.Printf("[DEBUG] could not close connection: %v", err)
+		}
+	}()
 
 	requestID := p.nextRequestID()
 
@@ -143,7 +159,10 @@ func (p *Proxy) handleConnection(conn net.Conn, tp *k8s.TargetPod, streamConn ht
 		return
 	}
 	// we're not writing to this stream
-	errorStream.Close()
+	err = errorStream.Close()
+	if err != nil {
+		log.Printf("[DEBUG] error on closing error stream: %v", err)
+	}
 
 	errorChan := make(chan error)
 	go func() {
@@ -180,7 +199,12 @@ func (p *Proxy) handleConnection(conn net.Conn, tp *k8s.TargetPod, streamConn ht
 
 	go func() {
 		// inform server we're not sending any more data after copy unblocks
-		defer dataStream.Close()
+		defer func() {
+			err := dataStream.Close()
+			if err != nil {
+				log.Printf("[DEBUG] error closing data stream: %v", err)
+			}
+		}()
 
 		// Copy from the local port to the remote side.
 		if _, err := io.Copy(dataStream, conn); err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
@@ -200,7 +224,10 @@ func (p *Proxy) handleConnection(conn net.Conn, tp *k8s.TargetPod, streamConn ht
 	err = <-errorChan
 	if err != nil {
 		runtime.HandleError(err)
-		streamConn.Close()
+		err := streamConn.Close()
+		if err != nil {
+			log.Printf("[DEBUG] error closing stream connection: %v", err)
+		}
 	}
 }
 
@@ -246,19 +273,31 @@ func (p *Proxy) HijackConnect(r *http.Request, client net.Conn, _ *goproxy.Proxy
 	tp, err := p.getTargetPod(r)
 	if err != nil {
 		log.Printf("[INFO] could not get pod %v", err)
-		client.Write([]byte("HTTP/1.1 500 Cannot reach destination\r\n\r\n"))
+		_, err := client.Write([]byte("HTTP/1.1 500 Cannot reach destination\r\n\r\n"))
+		if err != nil {
+			log.Printf("[ERROR] could not write to client: %v", err)
+		}
+		return
 	}
 
 	dialer, err := p.k8sc.Dialer(tp)
 	if err != nil {
 		log.Printf("[ERROR] could not create dialer: %v", err)
-		client.Write([]byte("HTTP/1.1 500 Cannot reach destination\r\n\r\n"))
+		_, err := client.Write([]byte("HTTP/1.1 500 Cannot reach destination\r\n\r\n"))
+		if err != nil {
+			log.Printf("[ERROR] could not write to client: %v", err)
+		}
+		return
 	}
 
 	con, _, err := dialer.Dial(portforward.PortForwardProtocolV1Name)
 	if err != nil {
 		log.Printf("[ERROR] could not dial: %v", err)
-		client.Write([]byte("HTTP/1.1 500 Cannot reach destination\r\n\r\n"))
+		_, err := client.Write([]byte("HTTP/1.1 500 Cannot reach destination\r\n\r\n"))
+		if err != nil {
+			log.Printf("[ERROR] could not write to client: %v", err)
+		}
+		return
 	}
 	p.handleConnection(client, tp, con)
 }
