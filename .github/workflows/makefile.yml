@@ -14,9 +14,15 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-      
-    - name: Run check
-      run: make check
+
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest
+        args: --timeout=3m
+
+    - name: Run test
+      run: make test
       
     - name: Run build
       run: make build-all
@@ -26,5 +32,5 @@ jobs:
       uses: AButler/upload-release-assets@v2.0
       if: github.event_name != 'pull_request'
       with:
-        files: 'artifacts/*;packages/*.nupkg'
+        files: 'out/bin/*'
         repo-token: ${{ secrets.GITHUB_TOKEN }}
