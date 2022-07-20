@@ -3,14 +3,12 @@ name: Release
 on:
   workflow_run:
     workflows: [ CodeQL, Makefile CI ]
-    tags: [ 'v*.*.*' ]
     types:
       - completed
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
+    if: contains(github.event.ref, '/tags/')
     steps:
       - uses: actions/checkout@v3
 
