@@ -2,13 +2,13 @@ name: Release
 
 on:
   workflow_run:
-    workflows: [ CodeQL, Makefile CI ]
+    workflows: [ Check ]
     types:
       - completed
 jobs:
   build:
     runs-on: ubuntu-latest
-    if: contains(github.event.ref, '/tags/')
+    if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v3
 
