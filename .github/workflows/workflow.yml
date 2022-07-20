@@ -75,3 +75,25 @@ jobs:
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v2
+  release:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Create GitHub release
+        uses: Roang-zero1/github-create-release-action@v2
+        with:
+          version_regex: ^v[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+
+          prerelease_regex: ^v[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+\-rc[[:digit:]]+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run build
+        run: make build-all
+
+      - name: Upload assets
+        uses: AButler/upload-release-assets@v2.0
+        with:
+          files: 'out/bin/*'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
