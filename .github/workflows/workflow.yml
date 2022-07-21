@@ -93,8 +93,9 @@ jobs:
       - name: Run build
         run: make build-all
 
-      - name: Upload assets
-        uses: AButler/upload-release-assets@v2.0
+      - name: Upload release binaries
+        uses: alexellis/upload-assets@0.2.2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
-          files: 'out/bin/*'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          asset_paths: '["./out/bin/*"]'
