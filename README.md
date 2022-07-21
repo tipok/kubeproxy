@@ -19,4 +19,4 @@ http://service.namespace.pod.cluster.local:8081
 ```
 
 Two different types are supported: pod and svc. Named ports are supported.
-All hostnames have to go to the domain `cluster.local` even though the domain differs from your actual k8s domain.
+All hostnames have to end with the cluster name which can be configured with `--cluster-domain`.

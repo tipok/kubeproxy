@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	log "github.com/go-pkgz/lgr"
 	"github.com/spf13/cobra"
@@ -93,6 +94,12 @@ func initConfig() {
 	} else {
 		home := homedir.HomeDir()
 		configPath := filepath.Join(home, ".config", "kubeproxy")
+		if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
+			err := os.MkdirAll(configPath, os.ModePerm)
+			if err != nil {
+				log.Fatalf("[PANIC] could not create config directory: %v", err)
+			}
+		}
 		viper.AddConfigPath(configPath)
 		viper.SetConfigType("yaml")
 		viper.SetConfigName("config")
